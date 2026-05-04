@@ -53,6 +53,7 @@ class ImactPlugin extends eqLogic
         $virtual = new virtual();
         $virtual->setEqType_name('virtual');
         $virtual->setName($nom);
+        $virtual->setLogicalId('led_' . uniqid());
         $virtual->setObject_id(2);
         $virtual->setIsEnable(1);
         $virtual->setIsVisible(1);
@@ -88,14 +89,15 @@ class ImactPlugin extends eqLogic
       $cmd->setIsHistorized(1);
       $cmd->save();
       return $cmd->getId();
+    } else {
+      $cmd->setValue($value);
+      $cmd->setConfiguration('virtualAction', '1');
+      $cmd->setDisplay('showNameOndashboard', '0');
+      $cmd->setDisplay('showNameOnmobile', '0');
+      $cmd->setTemplate('dashboard', 'custom::Imact - Lumière On / Off');
+      $cmd->setTemplate('mobile', 'custom::Imact - Lumière On / Off');
+      $cmd->save();
     }
-    $cmd->setValue($value);
-    $cmd->setConfiguration('virtualAction', '1');
-    $cmd->setDisplay('showNameOndashboard', '0');
-    $cmd->setDisplay('showNameOnmobile', '0');
-    $cmd->setTemplate('dashboard', 'custom::Imact - Lumière On / Off');
-    $cmd->setTemplate('mobile', 'custom::Imact - Lumière On / Off');
-    $cmd->save();
 
   }
 
@@ -214,7 +216,78 @@ class ImactPlugin extends eqLogic
         ]);
         $thermo->save();
 
-        self::configureDisplayThermostat($thermo->getId(), $thermostat['commandePersonnelle']);
+        $thermo->setDisplay('layout::dashboard', 'table');
+        $thermo->setDisplay('layout::dashboard::table::nbColumn', 2);
+        $thermo->setDisplay('layout::dashboard::table::nbLine', 5);
+        $thermo->setDisplay('height', '526px');
+        $thermo->setDisplay('width', '628px');
+
+        self::setOrderConsigneThermo(1, 'Boost', $thermo->getId());
+        self::setOrderConsigneThermo(2, 'Confort', $thermo->getId());
+        self::setOrderConsigneThermo(3, 'Eco', $thermo->getId());
+        self::setOrderConsigneThermo(4, 'Absent', $thermo->getId());
+        self::setOrderConsigneThermo(5, 'Hors-Gel', $thermo->getId());
+        self::setOrderConsigneThermo(6, 'Off', $thermo->getId());
+
+        $mode = $thermo->getCmd('info', 'mode');
+        $mode->setTemplate('dashboard', 'custom::Thermostat_statut_All');
+        $mode->save();
+
+        $thermo->setDisplay(
+          'layout::dashboard::table::parameters',
+          [
+            'style::td::1::2' => 'display:none',
+            'style::td::1::1' => 'colspan=2',
+            'style::td::2::2' => 'display:none',
+            'style::td::2::1' => 'colspan=2',
+            'style::td::3::2' => 'display:none',
+            'style::td::3::1' => 'colspan=2',
+            'text::td::5::1' => 'Température extérieure',
+            'text::td::5::2' => 'Température intérieure',
+          ]
+        );
+
+        $thermo->setDisplay('layout::dashboard::table::cmd::' . $mode->getId() . '::line', 2);
+        $thermo->setDisplay('layout::dashboard::table::cmd::' . $mode->getId() . '::column', 1);
+
+        $temperatureInterieur = $thermo->getCmd('info', 'temperature');
+        $temperatureInterieur->setDisplay('forceReturnLineBefore', 1);
+        $temperatureInterieur->setTemplate('dashboard', 'customtemp::thermos');
+        $temperatureInterieur->setDisplay('showNameOndashboard', 0);
+        $temperatureInterieur->save();
+        $thermo->setDisplay('layout::dashboard::table::cmd::' . $temperatureInterieur->getId() . '::line', 5);
+        $thermo->setDisplay('layout::dashboard::table::cmd::' . $temperatureInterieur->getId() . '::column', 2);
+
+        $temperatureExterieur = $thermo->getCmd('info', 'temperature_outdoor');
+        $temperatureExterieur->setDisplay('forceReturnLineBefore', 1);
+        $temperatureExterieur->setTemplate('dashboard', 'customtemp::thermos');
+        $temperatureExterieur->setDisplay('showNameOndashboard', 0);
+        $temperatureExterieur->save();
+        $thermo->setDisplay('layout::dashboard::table::cmd::' . $temperatureExterieur->getId() . '::line', 5);
+        $thermo->setDisplay('layout::dashboard::table::cmd::' . $temperatureExterieur->getId() . '::column', 1);
+
+        $thermostatSlider = $thermo->getCmd('action', 'thermostat');
+        $thermo->setDisplay('layout::dashboard::table::cmd::' . $thermostatSlider->getId() . '::line', 3);
+        $thermo->setDisplay('layout::dashboard::table::cmd::' . $thermostatSlider->getId() . '::column', 1);
+
+        $puissance = $thermo->getCmd('info', 'power');
+        $thermo->setDisplay('layout::dashboard::table::cmd::' . $puissance->getId() . '::line', 4);
+        $thermo->setDisplay('layout::dashboard::table::cmd::' . $puissance->getId() . '::column', 2);
+        if ($thermostat['commandePersonnelle']) {
+          $cmdOrigin = cmd::byId($thermostat['commandePersonnelle']);
+          $cmdCustom = cmd::byEqLogicIdCmdName($thermo->getId(), $cmdOrigin->getName());
+          $thermo->setDisplay('layout::dashboard::table::cmd::' . $cmdCustom->getId() . '::line', 4);
+          $thermo->setDisplay('layout::dashboard::table::cmd::' . $cmdCustom->getId() . '::column', 2);
+        }
+
+
+        $statut = $thermo->getCmd('info', 'status');
+        $statut->setTemplate('dashboard', 'custom::Thermostat - statut');
+        $statut->save();
+        $thermo->setDisplay('layout::dashboard::table::cmd::' . $statut->getId() . '::line', 4);
+        $thermo->setDisplay('layout::dashboard::table::cmd::' . $statut->getId() . '::column', 1);
+
+        $thermo->save();
       }
 
     } catch (\Throwable $th) {
@@ -222,82 +295,6 @@ class ImactPlugin extends eqLogic
       throw $th;
     }
     return 'ajout thermostat';
-  }
-  public static function configureDisplayThermostat($idThermostat, $commandePersonnelle)
-  {
-    $thermo = eqLogic::byId($idThermostat);
-    $thermo->setDisplay('layout::dashboard', 'table');
-    $thermo->setDisplay('layout::dashboard::table::nbColumn', 2);
-    $thermo->setDisplay('layout::dashboard::table::nbLine', 5);
-    $thermo->setDisplay('height', '526px');
-    $thermo->setDisplay('width', '628px');
-
-    self::setOrderConsigneThermo(1, 'Boost', $thermo->getId());
-    self::setOrderConsigneThermo(2, 'Confort', $thermo->getId());
-    self::setOrderConsigneThermo(3, 'Eco', $thermo->getId());
-    self::setOrderConsigneThermo(4, 'Absent', $thermo->getId());
-    self::setOrderConsigneThermo(5, 'Hors-Gel', $thermo->getId());
-    self::setOrderConsigneThermo(6, 'Off', $thermo->getId());
-
-    $mode = $thermo->getCmd('info', 'mode');
-    $mode->setTemplate('dashboard', 'custom::Thermostat_statut_All');
-    $mode->save();
-
-    $thermo->setDisplay(
-      'layout::dashboard::table::parameters',
-      [
-        'style::td::1::2' => 'display:none',
-        'style::td::1::1' => 'colspan=2',
-        'style::td::2::2' => 'display:none',
-        'style::td::2::1' => 'colspan=2',
-        'style::td::3::2' => 'display:none',
-        'style::td::3::1' => 'colspan=2',
-        'text::td::5::1' => 'Température extérieure',
-        'text::td::5::2' => 'Température intérieure',
-      ]
-    );
-
-    $thermo->setDisplay('layout::dashboard::table::cmd::' . $mode->getId() . '::line', 2);
-    $thermo->setDisplay('layout::dashboard::table::cmd::' . $mode->getId() . '::column', 1);
-
-    $temperatureInterieur = $thermo->getCmd('info', 'temperature');
-    $temperatureInterieur->setDisplay('forceReturnLineBefore', 1);
-    $temperatureInterieur->setTemplate('dashboard', 'customtemp::thermos');
-    $temperatureInterieur->setDisplay('showNameOndashboard', 0);
-    $temperatureInterieur->save();
-    $thermo->setDisplay('layout::dashboard::table::cmd::' . $temperatureInterieur->getId() . '::line', 5);
-    $thermo->setDisplay('layout::dashboard::table::cmd::' . $temperatureInterieur->getId() . '::column', 2);
-
-    $temperatureExterieur = $thermo->getCmd('info', 'temperature_outdoor');
-    $temperatureExterieur->setDisplay('forceReturnLineBefore', 1);
-    $temperatureExterieur->setTemplate('dashboard', 'customtemp::thermos');
-    $temperatureExterieur->setDisplay('showNameOndashboard', 0);
-    $temperatureExterieur->save();
-    $thermo->setDisplay('layout::dashboard::table::cmd::' . $temperatureExterieur->getId() . '::line', 5);
-    $thermo->setDisplay('layout::dashboard::table::cmd::' . $temperatureExterieur->getId() . '::column', 1);
-
-    $thermostatSlider = $thermo->getCmd('action', 'thermostat');
-    $thermo->setDisplay('layout::dashboard::table::cmd::' . $thermostatSlider->getId() . '::line', 3);
-    $thermo->setDisplay('layout::dashboard::table::cmd::' . $thermostatSlider->getId() . '::column', 1);
-
-    $puissance = $thermo->getCmd('info', 'power');
-    $thermo->setDisplay('layout::dashboard::table::cmd::' . $puissance->getId() . '::line', 4);
-    $thermo->setDisplay('layout::dashboard::table::cmd::' . $puissance->getId() . '::column', 2);
-    if ($commandePersonnelle) {
-      $cmdOrigin = cmd::byId($commandePersonnelle);
-      $cmdCustom = cmd::byEqLogicIdCmdName($thermo->getId(), $cmdOrigin->getName());
-      $thermo->setDisplay('layout::dashboard::table::cmd::' . $cmdCustom->getId() . '::line', 4);
-      $thermo->setDisplay('layout::dashboard::table::cmd::' . $cmdCustom->getId() . '::column', 2);
-    }
-
-
-    $statut = $thermo->getCmd('info', 'status');
-    $statut->setTemplate('dashboard', 'custom::Thermostat - statut');
-    $statut->save();
-    $thermo->setDisplay('layout::dashboard::table::cmd::' . $statut->getId() . '::line', 4);
-    $thermo->setDisplay('layout::dashboard::table::cmd::' . $statut->getId() . '::column', 1);
-
-    $thermo->save();
   }
   public static function setOrderConsigneThermo($ordre, $nomConsigne, $idThermo)
   {
